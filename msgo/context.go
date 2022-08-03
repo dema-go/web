@@ -4,13 +4,16 @@ import (
 	"errors"
 	"github.com/demo-go/msgo/render"
 	"html/template"
+	"io"
 	"log"
+	"mime/multipart"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 )
 
-const defaultMaxMemory = 32 << 20
+const defaultMultipartMemory = 32 << 20
 
 type Context struct {
 	W          http.ResponseWriter
@@ -79,7 +82,7 @@ func (c *Context) get(cache map[string][]string, key string) (map[string]string,
 }
 func (c *Context) initFormCache() {
 	if c.R != nil {
-		if err := c.R.ParseMultipartForm(defaultMaxMemory); err != nil {
+		if err := c.R.ParseMultipartForm(defaultMultipartMemory); err != nil {
 			if !errors.Is(err, http.ErrNotMultipart) {
 				log.Println(err)
 			}
@@ -111,6 +114,45 @@ func (c *Context) GetPostForm(key string) (string, bool) {
 func (c *Context) PostFormArr(key string) []string {
 	values, _ := c.GetQueryArr(key)
 	return values
+}
+
+func (c *Context) FormFile(name string) *multipart.FileHeader {
+	file, header, err := c.R.FormFile(name)
+	if err != nil {
+		log.Println(err)
+	}
+	defer file.Close()
+	return header
+}
+
+func (c *Context) FormFiles(name string) []*multipart.FileHeader {
+	multipartForm, err := c.MultipartForm()
+	if err != nil {
+		log.Println(err)
+	}
+	return multipartForm.File[name]
+}
+
+func (c *Context) SaveUploadFile(file *multipart.FileHeader, dst string) error {
+	src, err := file.Open()
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, src)
+	return err
+}
+
+func (c *Context) MultipartForm() (*multipart.Form, error) {
+	err := c.R.ParseMultipartForm(defaultMultipartMemory)
+	return c.R.MultipartForm, err
 }
 
 func (c *Context) HTML(status int, html string) error {

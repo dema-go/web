@@ -133,6 +133,20 @@ func main() {
 	})
 	g.Post("/formPost", func(ctx *msgo.Context) {
 		name, _ := ctx.GetPostFormMap("user")
+		//file := ctx.FormFile("file")
+		//err := ctx.SaveUploadFile(file, "./upload/"+file.Filename)
+		//if err != nil {
+		//	log.Println(err)
+		//}
+		form, err := ctx.MultipartForm()
+		if err != nil {
+			log.Println(err)
+		}
+		fileMap := form.File
+		headers := fileMap["file"]
+		for _, file := range headers {
+			ctx.SaveUploadFile(file, "./upload/"+file.Filename)
+		}
 		ctx.JSON(http.StatusOK, name)
 	})
 	engine.Run()
