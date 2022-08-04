@@ -1,7 +1,9 @@
 package msgo
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/demo-go/msgo/render"
 	"html/template"
 	"io"
@@ -10,17 +12,20 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"reflect"
 	"strings"
 )
 
 const defaultMultipartMemory = 32 << 20
 
 type Context struct {
-	W          http.ResponseWriter
-	R          *http.Request
-	engine     *Engine
-	queryCache url.Values
-	formCache  url.Values
+	W                     http.ResponseWriter
+	R                     *http.Request
+	engine                *Engine
+	queryCache            url.Values
+	formCache             url.Values
+	DisallowUnknownFields bool
+	IsValidate            bool
 }
 
 func (c *Context) GetDefaultQuery(key, defaultValue string) string {
@@ -250,4 +255,64 @@ func (c *Context) Render(statusCode int, r render.Render) error {
 		c.W.WriteHeader(statusCode)
 	}
 	return err
+}
+
+func (c *Context) DealJson(obj any) error {
+	body := c.R.Body
+	// Post 传参的内容在body中
+	if body == nil {
+		return errors.New("invalid request")
+	}
+	decoder := json.NewDecoder(body)
+	if c.DisallowUnknownFields {
+		decoder.DisallowUnknownFields()
+	}
+	if c.IsValidate {
+		err := validateParam(obj, decoder)
+		if err != nil {
+			return err
+		}
+	} else {
+		err := decoder.Decode(obj)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateParam(obj any, decoder *json.Decoder) error {
+	// 解析为 map， 根据 map 中的 key 进行比较
+	// 判断类型 结构体 才能解析成 map
+	// reflect
+	data := reflect.ValueOf(obj)
+	if data.Kind() != reflect.Pointer {
+		return errors.New("This argument must have a pointer type ")
+	}
+	elem := data.Elem().Interface()
+	of := reflect.ValueOf(elem)
+
+	switch of.Kind() {
+	case reflect.Struct:
+		mapValue := make(map[string]any)
+		_ = decoder.Decode(&mapValue)
+		for i := 0; i < of.NumField(); i++ {
+			field := of.Type().Field(i)
+			name := field.Name
+			jsonName := field.Tag.Get("json")
+			if jsonName != "" {
+				name = jsonName
+			}
+			required := field.Tag.Get("demago")
+			value := mapValue[name]
+			if value == nil && required == "required" {
+				return errors.New(fmt.Sprintf("filed [%s] is required, but [%s] is not exist", name, name))
+			}
+		}
+		b, _ := json.Marshal(mapValue)
+		_ = json.Unmarshal(b, obj)
+	default:
+		_ = decoder.Decode(obj)
+	}
+	return nil
 }

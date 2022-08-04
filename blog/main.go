@@ -8,8 +8,10 @@ import (
 )
 
 type User struct {
-	Name string
-	Age  int
+	Name    string   `json:"name"`
+	Age     int      `json:"age"`
+	Address []string `json:"address"`
+	Email   string   `json:"email" demago:"required"`
 }
 
 func Log(next msgo.HandleFunc) msgo.HandleFunc {
@@ -148,6 +150,19 @@ func main() {
 			ctx.SaveUploadFile(file, "./upload/"+file.Filename)
 		}
 		ctx.JSON(http.StatusOK, name)
+	})
+	g.Post("/jsonParam", func(ctx *msgo.Context) {
+		user := &User{}
+		// 开启校验 参数中有 结构体中没有 报错
+		// ctx.DisallowUnknownFields = true
+		// 开启校验 参数中没有 结构体中有 报错
+		ctx.IsValidate = true
+		err := ctx.DealJson(user)
+		if err == nil {
+			ctx.JSON(http.StatusOK, user)
+		} else {
+			log.Println(err)
+		}
 	})
 	engine.Run()
 }
